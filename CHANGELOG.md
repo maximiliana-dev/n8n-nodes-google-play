@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- **Fix: APK → Download Universal always reported "no universal APK".** The `generatedapks.list` response was parsed with the wrong field name (`generatedApksPerSigningKey`, the schema *type* name, instead of `generatedApks`, the actual field), so the universal APK was never found for any app. Verified against the androidpublisher v3 discovery document.
+
 ## 0.3.0
 
 - **Trigger: New Production Release event.** The trigger now offers an Event selector (New Review remains the default). The new event polls the production track of the selected apps, deduplicates releases via a SHA-256 fingerprint of their version codes, and emits release metadata (`versionCodes`, `versionCode`, `status`, `rolloutPercentage`, `releaseNotes`, `appName`). Staged rollouts are configurable through **Emit When**: on rollout start, on rollout completion (100%), or both. Per-app state and error isolation work as for reviews.

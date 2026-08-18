@@ -185,7 +185,8 @@ export function pickLatestVersionCode(track: Track): number | undefined {
 }
 
 export interface GeneratedApksListResponse {
-	generatedApksPerSigningKey?: Array<{
+	/** One entry per app signing key (items are of type GeneratedApksPerSigningKey). */
+	generatedApks?: Array<{
 		certificateSha256Hash?: string;
 		generatedUniversalApk?: { downloadId?: string };
 	}>;
@@ -201,7 +202,7 @@ export interface UniversalApkRef {
  * Play App Signing get a generated universal APK.
  */
 export function pickUniversalApk(response: GeneratedApksListResponse): UniversalApkRef | undefined {
-	for (const entry of response.generatedApksPerSigningKey ?? []) {
+	for (const entry of response.generatedApks ?? []) {
 		const downloadId = entry.generatedUniversalApk?.downloadId;
 		if (typeof downloadId === 'string' && downloadId !== '') {
 			return { downloadId, certificateSha256Hash: entry.certificateSha256Hash };

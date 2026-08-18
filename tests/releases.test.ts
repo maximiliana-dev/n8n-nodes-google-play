@@ -205,7 +205,7 @@ describe('pickUniversalApk', () => {
 	it('picks the first signing key with a universal APK', () => {
 		assert.deepEqual(
 			pickUniversalApk({
-				generatedApksPerSigningKey: [
+				generatedApks: [
 					{ certificateSha256Hash: 'aa' },
 					{ certificateSha256Hash: 'bb', generatedUniversalApk: { downloadId: 'dl-1' } },
 				],
@@ -218,7 +218,7 @@ describe('pickUniversalApk', () => {
 		assert.equal(pickUniversalApk({}), undefined);
 		assert.equal(
 			pickUniversalApk({
-				generatedApksPerSigningKey: [{ generatedUniversalApk: { downloadId: '' } }],
+				generatedApks: [{ generatedUniversalApk: { downloadId: '' } }],
 			}),
 			undefined,
 		);
