@@ -64,6 +64,8 @@ export function selectReviewsToEmit<T>(
 
 export interface MultiAppPollState {
 	apps?: Record<string, ReviewPollState>;
+	/** Cached app display names, resolved lazily by the trigger */
+	names?: Record<string, string>;
 	// Legacy single-app fields from versions before multi-app support
 	lastPollMs?: number;
 	seen?: Record<string, number>;
@@ -92,6 +94,14 @@ export function getAppStates(
 	}
 	delete state.lastPollMs;
 	delete state.seen;
+
+	if (state.names !== undefined) {
+		for (const key of Object.keys(state.names)) {
+			if (!appKeys.includes(key)) {
+				delete state.names[key];
+			}
+		}
+	}
 
 	for (const key of Object.keys(state.apps)) {
 		if (!appKeys.includes(key)) {

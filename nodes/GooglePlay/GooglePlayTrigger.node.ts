@@ -13,7 +13,12 @@ import {
 	selectReviewsToEmit,
 	type MultiAppPollState,
 } from '../shared/reviewPolling';
-import { assertPackageName, getApps, googlePlayListReviews } from './GenericFunctions';
+import {
+	assertPackageName,
+	fetchAppNames,
+	getApps,
+	googlePlayListReviews,
+} from './GenericFunctions';
 import { googleReviewTimestampMs, simplifyGoogleReview, type GoogleReview } from './reviews';
 
 const DEFAULT_LOOKBACK_MINUTES = 15;
@@ -132,13 +137,38 @@ export class GooglePlayTrigger implements INodeType {
 			qs.translationLanguage = options.translationLanguage.trim();
 		}
 
-		const toItem = (review: GoogleReview, packageName: string): INodeExecutionData => ({
-			json: simplify
-				? { packageName, ...simplifyGoogleReview(review) }
-				: { packageName, ...(review as unknown as IDataObject) },
-		});
+		const manual = this.getMode() === 'manual';
+		const multiState = manual
+			? ({} as MultiAppPollState)
+			: (this.getWorkflowStaticData('node') as MultiAppPollState);
+		const appStates = getAppStates(multiState, packageNames);
 
-		if (this.getMode() === 'manual') {
+		// Display names come from the Reporting API and rarely change: resolve
+		// missing ones once and cache them; on failure fall back to the package
+		// name for this poll and retry on the next one.
+		const names = (multiState.names ??= {});
+		if (packageNames.some((packageName) => names[packageName] === undefined)) {
+			try {
+				Object.assign(names, await fetchAppNames.call(this));
+			} catch (error) {
+				this.logger.warn(
+					`Google Play Trigger: could not resolve app display names: ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+				);
+			}
+		}
+
+		const toItem = (review: GoogleReview, packageName: string): INodeExecutionData => {
+			const appName = names[packageName] ?? packageName;
+			return {
+				json: simplify
+					? { packageName, appName, ...simplifyGoogleReview(review) }
+					: { packageName, appName, ...(review as unknown as IDataObject) },
+			};
+		};
+
+		if (manual) {
 			const items: INodeExecutionData[] = [];
 			for (const packageName of packageNames) {
 				const reviews = await googlePlayListReviews.call(this, packageName, {
@@ -152,10 +182,6 @@ export class GooglePlayTrigger implements INodeType {
 
 		const nowMs = Date.now();
 		const marginMs = (options.lookbackMinutes ?? DEFAULT_LOOKBACK_MINUTES) * 60_000;
-		const appStates = getAppStates(
-			this.getWorkflowStaticData('node') as MultiAppPollState,
-			packageNames,
-		);
 
 		const items: INodeExecutionData[] = [];
 		let firstFailure: unknown;

@@ -156,12 +156,13 @@ interface ReportingAppsPage {
  * the "Google Play Developer Reporting API" to be enabled in the project; the
  * Google error message carries the activation link when it is not.
  */
-async function listAccessibleApps(context: ILoadOptionsFunctions): Promise<INodeListSearchItems[]> {
-	const results: INodeListSearchItems[] = [];
+/** Maps package name → display name for every app the credential can access. */
+export async function fetchAppNames(this: RequestContext): Promise<Record<string, string>> {
+	const names: Record<string, string> = {};
 	let pageToken: string | undefined;
 
 	do {
-		const response = (await googlePlayApiRequest.call(context, 'GET', REPORTING_APPS_URL, {
+		const response = (await googlePlayApiRequest.call(this, 'GET', REPORTING_APPS_URL, {
 			qs: { pageSize: 100, ...(pageToken !== undefined ? { pageToken } : {}) },
 		})) as ReportingAppsPage;
 
@@ -170,19 +171,24 @@ async function listAccessibleApps(context: ILoadOptionsFunctions): Promise<INode
 				continue;
 			}
 			const displayName = app.displayName?.trim();
-			results.push({
-				name:
-					displayName !== undefined && displayName !== ''
-						? `${displayName} (${app.packageName})`
-						: app.packageName,
-				value: app.packageName,
-			});
+			names[app.packageName] =
+				displayName !== undefined && displayName !== '' ? displayName : app.packageName;
 		}
 
 		pageToken = typeof response.nextPageToken === 'string' ? response.nextPageToken : undefined;
 	} while (pageToken !== undefined && pageToken !== '');
 
-	return results.sort((a, b) => a.name.localeCompare(b.name));
+	return names;
+}
+
+async function listAccessibleApps(context: ILoadOptionsFunctions): Promise<INodeListSearchItems[]> {
+	const names = await fetchAppNames.call(context);
+	return Object.entries(names)
+		.map(([packageName, displayName]) => ({
+			name: displayName === packageName ? packageName : `${displayName} (${packageName})`,
+			value: packageName,
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Populates the App resource locator on the Google Play node. */

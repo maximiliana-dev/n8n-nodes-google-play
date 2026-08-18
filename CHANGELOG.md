@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Trigger reviews now include `appName`, the store display name of the app, resolved automatically and cached in the polling state (falls back to the app identifier if the listing API is unavailable).
+
 ## 0.2.0
 
 - **Trigger: watch several apps.** The trigger now takes a multi-select app list (App Names or IDs); each app keeps its own polling state, so a temporary failure in one app never affects the others. Emitted reviews include the `packageName`.
