@@ -1,0 +1,55 @@
+# Publishes the package to npm with a provenance attestation (required by n8n
+# for verified community nodes since May 1 2026).
+#
+# Release process: bump the version + changelog, push, then run this workflow.
+#
+# Auth: OIDC trusted publishing (configure this repository + publish.yml as a
+# Trusted Publisher in the npm package settings), with an optional NPM_TOKEN
+# secret as fallback.
+
+name: Publish
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to mint an OIDC token for npm provenance attestation
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org/'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      # Pinned npm (>=11.5.1 needed for the OIDC trusted-publishing token
+      # exchange; the npm bundled with Node 22 is too old). RELEASE_MODE lets
+      # the prepublishOnly guard (n8n-node prerelease) pass: it exists to block
+      # accidental npm publishes outside this workflow.
+      - name: Publish to npm
+        run: |
+          [ -n "$NPM_TOKEN" ] && npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          npx -y npm@12.0.2 publish --access public --provenance
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_MODE: 'true'

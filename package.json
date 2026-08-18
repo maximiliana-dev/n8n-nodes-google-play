@@ -1,0 +1,65 @@
+{
+  "name": "@maximiliana/n8n-nodes-google-play",
+  "version": "0.1.3",
+  "description": "n8n community node for Google Play reviews: fetch and reply to app reviews, with a polling trigger for new reviews",
+  "keywords": [
+    "n8n-community-node-package",
+    "google-play",
+    "android-publisher",
+    "reviews"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/maximiliana-dev/n8n-nodes-google-play#readme",
+  "author": {
+    "name": "Maximiliana",
+    "email": "pedro@maximiliana.es"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maximiliana-dev/n8n-nodes-google-play.git"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "build": "n8n-node build",
+    "build:watch": "tsc --watch",
+    "dev": "n8n-node dev",
+    "format": "prettier nodes credentials tests --write",
+    "lint": "n8n-node lint",
+    "lint:fix": "n8n-node lint --fix",
+    "test": "vitest run",
+    "prepublishOnly": "n8n-node prerelease"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": [
+      "dist/credentials/GooglePlay/GooglePlayApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/GooglePlay/GooglePlay.node.js",
+      "dist/nodes/GooglePlay/GooglePlayTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/node-cli": "^0.43.4",
+    "@types/node": "^22.15.0",
+    "eslint": "^9.39.0",
+    "n8n-workflow": "~2.34.3",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@11.15.1"
+}

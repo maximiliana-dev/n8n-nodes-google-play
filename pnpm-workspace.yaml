@@ -1,0 +1,16 @@
+allowBuilds:
+  # vitest needs the esbuild binary to run the test suite
+  esbuild: true
+  # postinstall only prints a funding message
+  eslint-plugin-n8n-nodes-base: false
+  # native builds not needed: n8n-workflow is a types-only dev dependency here
+  isolated-vm: false
+  cpu-features: false
+  ssh2: false
+  # eslint-import-resolver-typescript works without the native binding
+  unrs-resolver: false
+
+overrides:
+  # Match the plugin version the @n8n/scan-community-package scanner runs, so
+  # local lint and the verification scan agree on the rule set.
+  "@n8n/eslint-plugin-community-nodes": 0.29.0
