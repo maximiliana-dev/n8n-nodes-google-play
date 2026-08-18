@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Restructure the private key parsing so invalid PEM keys are reported outside the catch block, complying with the community-nodes error-handling rule. No functional changes.
+
 ## 0.1.3
 
 - Moved to a standalone repository (https://github.com/maximiliana-dev/n8n-nodes-google-play) so the n8n verification pre-checks can locate the node and credential sources. No functional changes.

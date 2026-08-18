@@ -1,6 +1,6 @@
 {
   "name": "@maximiliana/n8n-nodes-google-play",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "n8n community node for Google Play reviews: fetch and reply to app reviews, with a polling trigger for new reviews",
   "keywords": [
     "n8n-community-node-package",

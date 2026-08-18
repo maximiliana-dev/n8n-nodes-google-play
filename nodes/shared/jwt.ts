@@ -36,12 +36,19 @@ export function base64UrlEncode(input: Buffer | string): string {
 	return Buffer.from(input).toString('base64url');
 }
 
-function parsePrivateKey(privateKeyPem: string, algorithm: JwtAlgorithm): KeyObject {
-	let key: KeyObject;
+function tryCreatePrivateKey(pem: string): KeyObject | undefined {
 	try {
-		key = createPrivateKey(normalizePrivateKey(privateKeyPem));
+		return createPrivateKey(pem);
 	} catch {
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- runs inside credential preAuthentication, where no node context exists
+		return undefined;
+	}
+}
+
+function parsePrivateKey(privateKeyPem: string, algorithm: JwtAlgorithm): KeyObject {
+	// Parsing failures surface outside the catch: this runs inside credential
+	// preAuthentication, where no node context exists for a NodeOperationError.
+	const key = tryCreatePrivateKey(normalizePrivateKey(privateKeyPem));
+	if (key === undefined) {
 		throw new Error('The private key is not a valid PEM-encoded key');
 	}
 
