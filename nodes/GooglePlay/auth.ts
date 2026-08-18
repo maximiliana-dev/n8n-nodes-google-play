@@ -5,7 +5,13 @@ import { signJwt } from '../shared/jwt';
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-export const ANDROID_PUBLISHER_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
+// androidpublisher covers reviews; playdeveloperreporting powers the app
+// picker (apps:search). Requesting a scope never fails by itself: if the
+// Reporting API is not enabled in the project, only the picker call errors.
+export const ANDROID_PUBLISHER_SCOPE = [
+	'https://www.googleapis.com/auth/androidpublisher',
+	'https://www.googleapis.com/auth/playdeveloperreporting',
+].join(' ');
 
 const TOKEN_LIFETIME_SECONDS = 3600;
 

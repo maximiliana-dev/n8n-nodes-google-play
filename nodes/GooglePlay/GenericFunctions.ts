@@ -1,4 +1,12 @@
-import type { IDataObject, IHttpRequestMethods, IHttpRequestOptions } from 'n8n-workflow';
+import type {
+	IDataObject,
+	IHttpRequestMethods,
+	IHttpRequestOptions,
+	ILoadOptionsFunctions,
+	INodeListSearchItems,
+	INodeListSearchResult,
+	INodePropertyOptions,
+} from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 
 import { toSanitizedApiError, type RequestContext } from '../shared/errors';
@@ -53,7 +61,7 @@ export async function googlePlayApiRequest(
 ): Promise<IDataObject> {
 	const options: IHttpRequestOptions = {
 		method,
-		url: `${BASE_URL}${endpoint}`,
+		url: endpoint.startsWith('https://') ? endpoint : `${BASE_URL}${endpoint}`,
 		json: true,
 		timeout: REQUEST_TIMEOUT_MS,
 		...(body !== undefined ? { body } : {}),
@@ -133,4 +141,66 @@ export async function googlePlayListReviews(
 	} while (nextPageToken !== undefined && nextPageToken !== '');
 
 	return collected;
+}
+
+const REPORTING_APPS_URL = 'https://playdeveloperreporting.googleapis.com/v1beta1/apps:search';
+
+interface ReportingAppsPage {
+	apps?: Array<{ packageName?: string; displayName?: string }>;
+	nextPageToken?: string;
+}
+
+/**
+ * Lists the apps the service account can access, through the Play Developer
+ * Reporting API (the Android Publisher API has no listing endpoint). Requires
+ * the "Google Play Developer Reporting API" to be enabled in the project; the
+ * Google error message carries the activation link when it is not.
+ */
+async function listAccessibleApps(context: ILoadOptionsFunctions): Promise<INodeListSearchItems[]> {
+	const results: INodeListSearchItems[] = [];
+	let pageToken: string | undefined;
+
+	do {
+		const response = (await googlePlayApiRequest.call(context, 'GET', REPORTING_APPS_URL, {
+			qs: { pageSize: 100, ...(pageToken !== undefined ? { pageToken } : {}) },
+		})) as ReportingAppsPage;
+
+		for (const app of response.apps ?? []) {
+			if (typeof app.packageName !== 'string' || app.packageName === '') {
+				continue;
+			}
+			const displayName = app.displayName?.trim();
+			results.push({
+				name:
+					displayName !== undefined && displayName !== ''
+						? `${displayName} (${app.packageName})`
+						: app.packageName,
+				value: app.packageName,
+			});
+		}
+
+		pageToken = typeof response.nextPageToken === 'string' ? response.nextPageToken : undefined;
+	} while (pageToken !== undefined && pageToken !== '');
+
+	return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Populates the App resource locator on the Google Play node. */
+export async function searchApps(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+): Promise<INodeListSearchResult> {
+	const results = await listAccessibleApps(this);
+	const query = filter?.trim().toLowerCase();
+	return {
+		results:
+			query === undefined || query === ''
+				? results
+				: results.filter((app) => app.name.toLowerCase().includes(query)),
+	};
+}
+
+/** Populates the multi-select app list on the Google Play trigger. */
+export async function getApps(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+	return await listAccessibleApps(this);
 }

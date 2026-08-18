@@ -50,13 +50,38 @@ export const reviewFields: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'Package Name',
+		displayName: 'App',
 		name: 'packageName',
-		type: 'string',
-		default: '',
+		type: 'resourceLocator',
+		default: { mode: 'list', value: '' },
 		required: true,
-		placeholder: 'e.g. com.example.app',
-		description: 'Package name of the app in Google Play',
+		description: 'The app whose reviews to work with',
+		modes: [
+			{
+				displayName: 'From List',
+				name: 'list',
+				type: 'list',
+				typeOptions: {
+					searchListMethod: 'searchApps',
+					searchable: true,
+				},
+			},
+			{
+				displayName: 'By ID',
+				name: 'id',
+				type: 'string',
+				placeholder: 'e.g. com.example.app',
+				validation: [
+					{
+						type: 'regex',
+						properties: {
+							regex: '[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+',
+							errorMessage: 'The ID must be the Android package name of the app',
+						},
+					},
+				],
+			},
+		],
 		displayOptions: {
 			show: {
 				resource: ['review'],

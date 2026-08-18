@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- **Trigger: watch several apps.** The trigger now takes a multi-select app list (App Names or IDs); each app keeps its own polling state, so a temporary failure in one app never affects the others. Emitted reviews include the `packageName`.
+- **App pickers.** The node selects the app with a searchable picker (From List / By ID) and the trigger with a multi-select, powered by the Play Developer Reporting API (`apps.search`) — enable that API in the Google Cloud project for the lists to load. The credential now also requests the `playdeveloperreporting` scope.
+- **Breaking**: the trigger's `Package Name` parameter is replaced by the multi-select list, and the node's `Package Name` field is now a resource locator — existing workflows need the app(s) re-selected. Trigger state migrates automatically for single-app configurations.
+
 ## 0.1.4
 
 - Restructure the private key parsing so invalid PEM keys are reported outside the catch block, complying with the community-nodes error-handling rule. No functional changes.

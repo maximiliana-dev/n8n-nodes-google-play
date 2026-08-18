@@ -15,6 +15,7 @@ import {
 	assertReviewId,
 	googlePlayApiRequest,
 	googlePlayListReviews,
+	searchApps,
 } from './GenericFunctions';
 import { simplifyGoogleReview, type GoogleReview } from './reviews';
 
@@ -61,6 +62,12 @@ export class GooglePlay implements INodeType {
 		usableAsTool: true,
 	};
 
+	methods = {
+		listSearch: {
+			searchApps,
+		},
+	};
+
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
@@ -93,7 +100,7 @@ async function executeReviewOperation(
 ): Promise<INodeExecutionData[]> {
 	const packageName = assertPackageName.call(
 		this,
-		this.getNodeParameter('packageName', itemIndex) as string,
+		this.getNodeParameter('packageName', itemIndex, undefined, { extractValue: true }) as string,
 		itemIndex,
 	);
 	const pairedItem = { item: itemIndex };

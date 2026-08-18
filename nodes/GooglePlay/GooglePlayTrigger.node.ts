@@ -5,19 +5,20 @@ import type {
 	INodeTypeDescription,
 	IPollFunctions,
 } from 'n8n-workflow';
-import { NodeConnectionTypes } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import {
 	computeWindowStartMs,
+	getAppStates,
 	selectReviewsToEmit,
-	type ReviewPollState,
+	type MultiAppPollState,
 } from '../shared/reviewPolling';
-import { assertPackageName, googlePlayListReviews } from './GenericFunctions';
+import { assertPackageName, getApps, googlePlayListReviews } from './GenericFunctions';
 import { googleReviewTimestampMs, simplifyGoogleReview, type GoogleReview } from './reviews';
 
 const DEFAULT_LOOKBACK_MINUTES = 15;
 const MAX_REVIEWS_PER_POLL = 500;
-const MANUAL_MODE_REVIEWS = 10;
+const MANUAL_MODE_REVIEWS = 5;
 
 interface TriggerOptions {
 	includeUpdated?: boolean;
@@ -36,7 +37,7 @@ export class GooglePlayTrigger implements INodeType {
 		},
 		group: ['trigger'],
 		version: 1,
-		subtitle: '={{ $parameter["packageName"] }}',
+		subtitle: 'new review',
 		description: 'Starts the workflow when an app gets a new review on Google Play',
 		defaults: {
 			name: 'Google Play Trigger',
@@ -52,13 +53,16 @@ export class GooglePlayTrigger implements INodeType {
 		],
 		properties: [
 			{
-				displayName: 'Package Name',
-				name: 'packageName',
-				type: 'string',
-				default: '',
+				displayName: 'App Names or IDs',
+				name: 'packageNames',
+				type: 'multiOptions',
+				typeOptions: {
+					loadOptionsMethod: 'getApps',
+				},
+				default: [],
 				required: true,
-				placeholder: 'e.g. com.example.app',
-				description: 'Package name of the app in Google Play',
+				description:
+					'The apps whose reviews to watch. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 			{
 				displayName: 'Options',
@@ -108,11 +112,18 @@ export class GooglePlayTrigger implements INodeType {
 		],
 	};
 
+	methods = {
+		loadOptions: {
+			getApps,
+		},
+	};
+
 	async poll(this: IPollFunctions): Promise<INodeExecutionData[][] | null> {
-		const packageName = assertPackageName.call(
-			this,
-			this.getNodeParameter('packageName') as string,
-		);
+		const rawPackageNames = this.getNodeParameter('packageNames') as string[];
+		const packageNames = rawPackageNames.map((name) => assertPackageName.call(this, name));
+		if (packageNames.length === 0) {
+			throw new NodeOperationError(this.getNode(), 'Select at least one app to watch');
+		}
 		const options = this.getNodeParameter('options', {}) as TriggerOptions;
 		const simplify = options.simplify ?? true;
 
@@ -121,54 +132,84 @@ export class GooglePlayTrigger implements INodeType {
 			qs.translationLanguage = options.translationLanguage.trim();
 		}
 
-		const toItems = (reviews: GoogleReview[]): INodeExecutionData[][] => [
-			reviews.map((review) => ({
-				json: simplify ? simplifyGoogleReview(review) : (review as unknown as IDataObject),
-			})),
-		];
+		const toItem = (review: GoogleReview, packageName: string): INodeExecutionData => ({
+			json: simplify
+				? { packageName, ...simplifyGoogleReview(review) }
+				: { packageName, ...(review as unknown as IDataObject) },
+		});
 
 		if (this.getMode() === 'manual') {
-			const reviews = await googlePlayListReviews.call(this, packageName, {
-				qs,
-				maxReviews: MANUAL_MODE_REVIEWS,
-			});
-			return reviews.length === 0 ? null : toItems(reviews);
+			const items: INodeExecutionData[] = [];
+			for (const packageName of packageNames) {
+				const reviews = await googlePlayListReviews.call(this, packageName, {
+					qs,
+					maxReviews: MANUAL_MODE_REVIEWS,
+				});
+				items.push(...reviews.map((review) => toItem(review, packageName)));
+			}
+			return items.length === 0 ? null : [items];
 		}
 
 		const nowMs = Date.now();
-		const state = this.getWorkflowStaticData('node') as ReviewPollState;
-
-		// First poll: establish the baseline without emitting historical reviews
-		if (state.lastPollMs === undefined) {
-			state.lastPollMs = nowMs;
-			state.seen = {};
-			return null;
-		}
-
 		const marginMs = (options.lookbackMinutes ?? DEFAULT_LOOKBACK_MINUTES) * 60_000;
-		const windowStartMs = computeWindowStartMs(state.lastPollMs, marginMs);
-
-		// Reviews come sorted by last modification, newest first
-		const reviews = await googlePlayListReviews.call(this, packageName, {
-			qs,
-			maxReviews: MAX_REVIEWS_PER_POLL,
-			shouldStop: (review) => googleReviewTimestampMs(review) < windowStartMs,
-		});
-
-		const { toEmit, seen } = selectReviewsToEmit(
-			reviews.map((review) => ({
-				id: review.reviewId,
-				timestampMs: googleReviewTimestampMs(review),
-				data: review,
-			})),
-			state.seen ?? {},
-			windowStartMs,
-			options.includeUpdated ?? false,
+		const appStates = getAppStates(
+			this.getWorkflowStaticData('node') as MultiAppPollState,
+			packageNames,
 		);
 
-		state.seen = seen;
-		state.lastPollMs = nowMs;
+		const items: INodeExecutionData[] = [];
+		let firstFailure: unknown;
+		let failureCount = 0;
 
-		return toEmit.length === 0 ? null : toItems(toEmit);
+		for (const packageName of packageNames) {
+			const state = appStates[packageName];
+
+			// First poll for this app: establish the baseline without emitting history
+			if (state?.lastPollMs === undefined) {
+				appStates[packageName] = { lastPollMs: nowMs, seen: {} };
+				continue;
+			}
+
+			try {
+				const windowStartMs = computeWindowStartMs(state.lastPollMs, marginMs);
+
+				// Reviews come sorted by last modification, newest first
+				const reviews = await googlePlayListReviews.call(this, packageName, {
+					qs,
+					maxReviews: MAX_REVIEWS_PER_POLL,
+					shouldStop: (review) => googleReviewTimestampMs(review) < windowStartMs,
+				});
+
+				const { toEmit, seen } = selectReviewsToEmit(
+					reviews.map((review) => ({
+						id: review.reviewId,
+						timestampMs: googleReviewTimestampMs(review),
+						data: review,
+					})),
+					state.seen ?? {},
+					windowStartMs,
+					options.includeUpdated ?? false,
+				);
+
+				appStates[packageName] = { lastPollMs: nowMs, seen };
+				items.push(...toEmit.map((review) => toItem(review, packageName)));
+			} catch (error) {
+				// A failing app keeps its previous state and retries its own window
+				// on the next poll; the other apps continue unaffected.
+				firstFailure ??= error;
+				failureCount += 1;
+				this.logger.warn(
+					`Google Play Trigger: polling reviews of "${packageName}" did not complete: ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+				);
+			}
+		}
+
+		if (failureCount === packageNames.length && failureCount > 0) {
+			throw firstFailure;
+		}
+
+		return items.length === 0 ? null : [items];
 	}
 }

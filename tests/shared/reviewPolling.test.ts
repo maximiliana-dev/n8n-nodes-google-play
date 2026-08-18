@@ -1,6 +1,11 @@
 import { assert, describe, it } from 'vitest';
 
-import { computeWindowStartMs, selectReviewsToEmit } from '../../nodes/shared/reviewPolling';
+import {
+	computeWindowStartMs,
+	getAppStates,
+	selectReviewsToEmit,
+	type MultiAppPollState,
+} from '../../nodes/shared/reviewPolling';
 
 const MINUTE = 60_000;
 
@@ -91,5 +96,39 @@ describe('selectReviewsToEmit', () => {
 		);
 		assert.deepEqual(poll2.toEmit, ['r2']);
 		assert.deepEqual(poll2.seen, { r1: 100 * MINUTE, r2: 108 * MINUTE });
+	});
+});
+
+describe('getAppStates', () => {
+	it('initializes the per-app container', () => {
+		const state: MultiAppPollState = {};
+		const apps = getAppStates(state, ['com.a', 'com.b']);
+		assert.deepEqual(apps, {});
+		assert.equal(state.apps, apps);
+	});
+
+	it('migrates legacy single-app state when exactly one app is selected', () => {
+		const state: MultiAppPollState = { lastPollMs: 100, seen: { r1: 90 } };
+		const apps = getAppStates(state, ['com.a']);
+		assert.deepEqual(apps, { 'com.a': { lastPollMs: 100, seen: { r1: 90 } } });
+		assert.equal(state.lastPollMs, undefined);
+		assert.equal(state.seen, undefined);
+	});
+
+	it('discards legacy state when several apps are selected', () => {
+		const state: MultiAppPollState = { lastPollMs: 100, seen: { r1: 90 } };
+		assert.deepEqual(getAppStates(state, ['com.a', 'com.b']), {});
+	});
+
+	it('drops slices of apps no longer selected and keeps the rest', () => {
+		const state: MultiAppPollState = {
+			apps: {
+				'com.a': { lastPollMs: 100, seen: {} },
+				'com.gone': { lastPollMs: 100, seen: {} },
+			},
+		};
+		assert.deepEqual(getAppStates(state, ['com.a', 'com.new']), {
+			'com.a': { lastPollMs: 100, seen: {} },
+		});
 	});
 });

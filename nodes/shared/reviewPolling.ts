@@ -61,3 +61,43 @@ export function selectReviewsToEmit<T>(
 
 	return { toEmit, seen };
 }
+
+export interface MultiAppPollState {
+	apps?: Record<string, ReviewPollState>;
+	// Legacy single-app fields from versions before multi-app support
+	lastPollMs?: number;
+	seen?: Record<string, number>;
+}
+
+/**
+ * Normalizes the trigger's static data into per-app state slices, keeping
+ * per-app windows independent: a failing app retries its own window without
+ * affecting the others, and newly added apps start their own baseline.
+ *
+ * Migrates the pre-multi-app single-app state when exactly one app is
+ * selected, and drops slices of apps no longer selected.
+ */
+export function getAppStates(
+	state: MultiAppPollState,
+	appKeys: string[],
+): Record<string, ReviewPollState> {
+	state.apps ??= {};
+
+	if (
+		state.lastPollMs !== undefined &&
+		appKeys.length === 1 &&
+		state.apps[appKeys[0]] === undefined
+	) {
+		state.apps[appKeys[0]] = { lastPollMs: state.lastPollMs, seen: state.seen ?? {} };
+	}
+	delete state.lastPollMs;
+	delete state.seen;
+
+	for (const key of Object.keys(state.apps)) {
+		if (!appKeys.includes(key)) {
+			delete state.apps[key];
+		}
+	}
+
+	return state.apps;
+}

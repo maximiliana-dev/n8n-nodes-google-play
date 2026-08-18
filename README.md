@@ -3,7 +3,7 @@
 n8n community nodes for Google Play app reviews, via the [Android Publisher API v3](https://developers.google.com/android-publisher):
 
 - **Google Play** — fetch and reply to reviews.
-- **Google Play Trigger** — polls for new (and optionally updated) reviews.
+- **Google Play Trigger** — polls one or several apps for new (and optionally updated) reviews.
 
 Looking for the Apple App Store? See [`@maximiliana/n8n-nodes-app-store`](https://www.npmjs.com/package/@maximiliana/n8n-nodes-app-store).
 
@@ -22,7 +22,8 @@ Authentication uses a Google Cloud **service account**. The credential signs an 
 1. In [Google Cloud Console](https://console.cloud.google.com/), create (or reuse) a project and create a **service account** (no roles needed).
 2. Create a **JSON key** for it and download the file.
 3. In [Google Play Console](https://play.google.com/console) → **Users and permissions**, invite the service account email and grant it at least **View app information** and **Reply to reviews** on the relevant app(s).
-4. In n8n, create a **Google Play API** credential with:
+4. Optional, for the app pickers: in Google Cloud Console → APIs & Services, also enable the **Google Play Developer Reporting API** (the Android Publisher API has no endpoint to list apps, so the pickers use [`apps.search`](https://developers.google.com/play/developer/reporting/reference/rest/v1beta1/apps/search)). Without it, apps can still be set by package name through expressions.
+5. In n8n, create a **Google Play API** credential with:
    - **Service Account Email**: the `client_email` field of the JSON key.
    - **Private Key**: the `private_key` field of the JSON key (escaped `\n` and pasted formatting are handled automatically).
 
@@ -42,7 +43,7 @@ Notes from the underlying API:
 
 ## Trigger
 
-The trigger uses n8n polling (configure the schedule in the node's **Poll Times**). On each poll it fetches reviews newer than the previous poll and emits the ones not seen before. Options:
+The trigger watches **one or several apps** (multi-select picker, or package names via expression) and uses n8n polling (configure the schedule in the node's **Poll Times**). On each poll it fetches, per app, the reviews newer than the previous poll and emits the ones not seen before, each tagged with its `packageName`. Every app keeps its own polling state: a temporary failure in one app never loses or duplicates reviews of the others. Options:
 
 - **Lookback Margin (Minutes)** (default 15): each poll also re-checks the interval *before* the previous poll by this margin, to compensate for the delay with which Google Play surfaces new reviews. Overlapping reviews are deduplicated, so a larger margin never produces duplicates.
 - **Include Updated Reviews**: also trigger when an already-seen review is edited.
@@ -55,6 +56,7 @@ The first poll only establishes the baseline and emits nothing (historical revie
 
 ```jsonc
 {
+  "packageName": "com.example.app",
   "reviewId": "gp:AOqpTOE…",
   "authorName": "Jane",
   "rating": 5,
