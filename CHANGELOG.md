@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- **Trigger: New Production Release event.** The trigger now offers an Event selector (New Review remains the default). The new event polls the production track of the selected apps, deduplicates releases via a SHA-256 fingerprint of their version codes, and emits release metadata (`versionCodes`, `versionCode`, `status`, `rolloutPercentage`, `releaseNotes`, `appName`). Staged rollouts are configurable through **Emit When**: on rollout start, on rollout completion (100%), or both. Per-app state and error isolation work as for reviews.
+- **Node: APK → Download Universal.** Downloads the signed universal APK that Play App Signing generates, for a specific version code or the latest production release, as a binary item.
+- **Fix: survive old hoisted `n8n-workflow` copies.** On instances whose `~/.n8n/nodes` already held an `n8n-workflow` 1.x hoisted by other community packages, npm reused it (it satisfies the `*` peer range that n8n verification mandates) and the nodes failed to load with "Class could not be found", because 1.x does not export `NodeConnectionTypes`. The nodes now fall back to the literal connection type when the export is missing; a troubleshooting section documents how to refresh a stale hoisted copy.
+
 ## 0.2.1
 
 - Trigger reviews now include `appName`, the store display name of the app, resolved automatically and cached in the polling state (falls back to the app identifier if the listing API is unavailable).

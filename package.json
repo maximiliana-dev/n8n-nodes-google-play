@@ -1,12 +1,14 @@
 {
   "name": "@maximiliana/n8n-nodes-google-play",
-  "version": "0.2.1",
-  "description": "n8n community node for Google Play reviews: fetch and reply to app reviews, with a polling trigger for new reviews",
+  "version": "0.3.0",
+  "description": "n8n community node for Google Play: fetch and reply to app reviews, download signed universal APKs, and polling triggers for new reviews and production releases",
   "keywords": [
     "n8n-community-node-package",
     "google-play",
     "android-publisher",
-    "reviews"
+    "reviews",
+    "releases",
+    "apk"
   ],
   "license": "MIT",
   "homepage": "https://github.com/maximiliana-dev/n8n-nodes-google-play#readme",

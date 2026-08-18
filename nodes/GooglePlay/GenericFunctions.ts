@@ -10,10 +10,12 @@ import type {
 import { NodeOperationError } from 'n8n-workflow';
 
 import { toSanitizedApiError, type RequestContext } from '../shared/errors';
+import type { Track } from './releases';
 import { extractGoogleErrorMessage, isValidPackageName, type GoogleReview } from './reviews';
 
 const BASE_URL = 'https://androidpublisher.googleapis.com/androidpublisher/v3';
 const REQUEST_TIMEOUT_MS = 30_000;
+const DOWNLOAD_TIMEOUT_MS = 300_000;
 const PAGE_SIZE = 100;
 
 export const GOOGLE_REPLY_MAX_LENGTH = 350;
@@ -53,6 +55,17 @@ export function assertReplyText(this: RequestContext, value: string, itemIndex?:
 	return text;
 }
 
+export function assertVersionCode(this: RequestContext, value: number, itemIndex?: number): number {
+	if (!Number.isInteger(value) || value <= 0) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`"${value}" is not a valid version code: expected a positive integer`,
+			{ itemIndex },
+		);
+	}
+	return value;
+}
+
 export async function googlePlayApiRequest(
 	this: RequestContext,
 	method: IHttpRequestMethods,
@@ -77,6 +90,77 @@ export async function googlePlayApiRequest(
 		return (response ?? {}) as IDataObject;
 	} catch (error) {
 		throw toSanitizedApiError(this, error, extractGoogleErrorMessage, 'Google Play', itemIndex);
+	}
+}
+
+/** Fetches a raw (non-JSON) API response, e.g. an APK download. */
+export async function googlePlayApiRequestBinary(
+	this: RequestContext,
+	endpoint: string,
+	{ qs, itemIndex }: { qs?: IDataObject; itemIndex?: number } = {},
+): Promise<Buffer> {
+	const options: IHttpRequestOptions = {
+		method: 'GET',
+		url: `${BASE_URL}${endpoint}`,
+		json: false,
+		encoding: 'arraybuffer',
+		timeout: DOWNLOAD_TIMEOUT_MS,
+		...(qs !== undefined ? { qs } : {}),
+	};
+
+	try {
+		const response = await this.helpers.httpRequestWithAuthentication.call(
+			this,
+			'googlePlayApi',
+			options,
+		);
+		return Buffer.isBuffer(response) ? response : Buffer.from(response as ArrayBuffer);
+	} catch (error) {
+		throw toSanitizedApiError(this, error, extractGoogleErrorMessage, 'Google Play', itemIndex);
+	}
+}
+
+/**
+ * Reads the production track through the edits API: reading track state
+ * requires an open edit, so one is created and deleted (best effort) around
+ * the read. Nothing is ever committed.
+ */
+export async function googlePlayGetProductionTrack(
+	this: RequestContext,
+	packageName: string,
+	itemIndex?: number,
+): Promise<Track> {
+	const edit = await googlePlayApiRequest.call(
+		this,
+		'POST',
+		`/applications/${encodeURIComponent(packageName)}/edits`,
+		{ body: {}, itemIndex },
+	);
+	const editId = edit.id;
+	if (typeof editId !== 'string' || editId === '') {
+		throw new NodeOperationError(this.getNode(), 'Google Play did not return an edit ID', {
+			itemIndex,
+		});
+	}
+
+	try {
+		return (await googlePlayApiRequest.call(
+			this,
+			'GET',
+			`/applications/${encodeURIComponent(packageName)}/edits/${encodeURIComponent(editId)}/tracks/production`,
+			{ itemIndex },
+		)) as Track;
+	} finally {
+		try {
+			await googlePlayApiRequest.call(
+				this,
+				'DELETE',
+				`/applications/${encodeURIComponent(packageName)}/edits/${encodeURIComponent(editId)}`,
+				{ itemIndex },
+			);
+		} catch {
+			// Abandoned edits expire on their own; failing to delete one is harmless.
+		}
 	}
 }
 

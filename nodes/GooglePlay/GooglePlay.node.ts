@@ -5,18 +5,28 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 
+import { MAIN_CONNECTION } from '../shared/connections';
 import { toNodeError } from '../shared/errors';
+import { apkFields, apkOperations } from './descriptions/ApkDescription';
 import { reviewFields, reviewOperations } from './descriptions/ReviewDescription';
 import {
 	assertPackageName,
 	assertReplyText,
 	assertReviewId,
+	assertVersionCode,
 	googlePlayApiRequest,
+	googlePlayApiRequestBinary,
+	googlePlayGetProductionTrack,
 	googlePlayListReviews,
 	searchApps,
 } from './GenericFunctions';
+import {
+	pickLatestVersionCode,
+	pickUniversalApk,
+	type GeneratedApksListResponse,
+} from './releases';
 import { simplifyGoogleReview, type GoogleReview } from './reviews';
 
 export class GooglePlay implements INodeType {
@@ -30,12 +40,12 @@ export class GooglePlay implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{ $parameter["operation"] + ": " + $parameter["resource"] }}',
-		description: 'Fetch and reply to Google Play app reviews',
+		description: 'Fetch and reply to Google Play app reviews, and download signed universal APKs',
 		defaults: {
 			name: 'Google Play',
 		},
-		inputs: [NodeConnectionTypes.Main],
-		outputs: [NodeConnectionTypes.Main],
+		inputs: [MAIN_CONNECTION],
+		outputs: [MAIN_CONNECTION],
 		credentials: [
 			{
 				name: 'googlePlayApi',
@@ -50,6 +60,10 @@ export class GooglePlay implements INodeType {
 				noDataExpression: true,
 				options: [
 					{
+						name: 'APK',
+						value: 'apk',
+					},
+					{
 						name: 'Review',
 						value: 'review',
 					},
@@ -58,6 +72,8 @@ export class GooglePlay implements INodeType {
 			},
 			...reviewOperations,
 			...reviewFields,
+			...apkOperations,
+			...apkFields,
 		],
 		usableAsTool: true,
 	};
@@ -72,11 +88,16 @@ export class GooglePlay implements INodeType {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
+		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
 
 		for (let i = 0; i < items.length; i++) {
 			try {
-				returnData.push(...(await executeReviewOperation.call(this, operation, i)));
+				returnData.push(
+					...(resource === 'apk'
+						? await executeApkOperation.call(this, operation, i)
+						: await executeReviewOperation.call(this, operation, i)),
+				);
 			} catch (error) {
 				if (this.continueOnFail()) {
 					returnData.push({
@@ -192,4 +213,91 @@ async function executeReviewOperation(
 	throw new NodeOperationError(this.getNode(), `Unsupported operation "${operation}"`, {
 		itemIndex,
 	});
+}
+
+async function executeApkOperation(
+	this: IExecuteFunctions,
+	operation: string,
+	itemIndex: number,
+): Promise<INodeExecutionData[]> {
+	if (operation !== 'downloadUniversal') {
+		throw new NodeOperationError(this.getNode(), `Unsupported operation "${operation}"`, {
+			itemIndex,
+		});
+	}
+
+	const packageName = assertPackageName.call(
+		this,
+		this.getNodeParameter('packageName', itemIndex, undefined, { extractValue: true }) as string,
+		itemIndex,
+	);
+	const versionSelection = this.getNodeParameter('versionSelection', itemIndex) as string;
+	const binaryPropertyName = this.getNodeParameter('binaryPropertyName', itemIndex) as string;
+	const options = this.getNodeParameter('options', itemIndex, {}) as { fileName?: string };
+
+	let versionCode: number;
+	if (versionSelection === 'specific') {
+		versionCode = assertVersionCode.call(
+			this,
+			this.getNodeParameter('versionCode', itemIndex) as number,
+			itemIndex,
+		);
+	} else {
+		const track = await googlePlayGetProductionTrack.call(this, packageName, itemIndex);
+		const latest = pickLatestVersionCode(track);
+		if (latest === undefined) {
+			throw new NodeOperationError(
+				this.getNode(),
+				`No live release was found on the production track of "${packageName}"`,
+				{ itemIndex },
+			);
+		}
+		versionCode = latest;
+	}
+
+	const generatedApks = (await googlePlayApiRequest.call(
+		this,
+		'GET',
+		`/applications/${encodeURIComponent(packageName)}/generatedApks/${versionCode}`,
+		{ itemIndex },
+	)) as GeneratedApksListResponse;
+
+	const universalApk = pickUniversalApk(generatedApks);
+	if (universalApk === undefined) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Google Play has no universal APK for version code ${versionCode} of "${packageName}". Universal APKs are only generated for apps published as App Bundles with Play App Signing.`,
+			{ itemIndex },
+		);
+	}
+
+	const content = await googlePlayApiRequestBinary.call(
+		this,
+		`/applications/${encodeURIComponent(packageName)}/generatedApks/${versionCode}/downloads/${encodeURIComponent(universalApk.downloadId)}:download`,
+		{ qs: { alt: 'media' }, itemIndex },
+	);
+
+	const trimmedFileName = options.fileName?.trim() ?? '';
+	const fileName =
+		trimmedFileName === '' ? `${packageName}-${versionCode}-universal.apk` : trimmedFileName;
+
+	const binary = await this.helpers.prepareBinaryData(
+		content,
+		fileName,
+		'application/vnd.android.package-archive',
+	);
+
+	return [
+		{
+			json: {
+				packageName,
+				versionCode,
+				fileName,
+				fileSize: content.length,
+				certificateSha256Hash: universalApk.certificateSha256Hash,
+			},
+			binary: { [binaryPropertyName.trim() === '' ? 'data' : binaryPropertyName.trim()]: binary },
+			pairedItem: { item: itemIndex },
+		},
+	];
 }
