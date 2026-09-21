@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- **Fix: manual trigger runs ignored Emit When.** Executing the release trigger manually returned every live release of the production track labelled by its current status, so a staged rollout showed up as `rolloutStarted` even when the node was set to emit only on rollout completion. Manual runs now preview the track through the same selection as a real first poll, honouring **Emit When**. Polling behaviour is unchanged, and manual runs still neither read nor write the polling state.
+
 ## 0.3.1
 
 - **Fix: APK → Download Universal always reported "no universal APK".** The `generatedapks.list` response was parsed with the wrong field name (`generatedApksPerSigningKey`, the schema *type* name, instead of `generatedApks`, the actual field), so the universal APK was never found for any app. Verified against the androidpublisher v3 discovery document.

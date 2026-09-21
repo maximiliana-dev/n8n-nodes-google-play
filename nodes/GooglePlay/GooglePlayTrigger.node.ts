@@ -365,16 +365,12 @@ async function pollReleases(
 				data: release,
 			}));
 
+			// A manual run previews the track as if it were polled for the first
+			// time: no state is read or written, but `emitOn` filters as it would
+			// on a real poll.
 			if (manual) {
-				items.push(
-					...candidates.map((candidate) =>
-						toItem(
-							packageName,
-							candidate.data,
-							candidate.isCompleted ? 'rolloutCompleted' : 'rolloutStarted',
-						),
-					),
-				);
+				const { toEmit } = selectReleaseEvents(candidates, {}, emitOn);
+				items.push(...toEmit.map(({ event, data }) => toItem(packageName, data, event)));
 				continue;
 			}
 

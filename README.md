@@ -48,7 +48,7 @@ Downloads the **signed universal APK** that Google Play generates for apps publi
 
 ## Trigger
 
-The trigger watches **one or several apps** (multi-select picker, or package names via expression), uses n8n polling (configure the schedule in the node's **Poll Times**), and supports two events: **New Review** and **New Production Release**. Every app keeps its own polling state: a temporary failure in one app never affects the others. For both events the first poll only establishes the baseline and emits nothing (history is not replayed), and executing the trigger manually returns current data so you can inspect the output shape.
+The trigger watches **one or several apps** (multi-select picker, or package names via expression), uses n8n polling (configure the schedule in the node's **Poll Times**), and supports two events: **New Review** and **New Production Release**. Every app keeps its own polling state: a temporary failure in one app never affects the others. For both events the first poll only establishes the baseline and emits nothing (history is not replayed), and executing the trigger manually returns the current data (releases are previewed through the same **Emit When** filter as a real poll) so you can inspect the output shape.
 
 ### New Production Release
 
