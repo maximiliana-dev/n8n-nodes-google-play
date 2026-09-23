@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- **Fix: sporadic "No bridge acquired for this context" trigger failures.** On instances running the VM expression engine (`N8N_EXPRESSION_ENGINE=vm`), n8n releases a workflow's expression isolate as soon as one concurrent poller finishes, so a trigger polling at the same time as another trigger of the same workflow could fail while resolving the credential's `={{$credentials.accessToken}}` header. The credential now builds the `Authorization` header in code, without expression evaluation.
+- **Transient failures no longer fail the trigger.** Idempotent API requests are retried up to 3 times (after 2 s, 5 s and 10 s) on network errors (connection aborted/reset, timeouts, DNS) and on HTTP 408, 429, 500, 502, 503 and 504. When every app of a poll still fails with a transient error, the trigger logs a warning and retries on the next poll, surfacing the failure only after 10 consecutive such polls; any other failure (e.g. invalid credentials) surfaces immediately. No reviews are lost: a failing app keeps its polling window.
+
 ## 0.3.2
 
 - **Fix: manual trigger runs ignored Emit When.** Executing the release trigger manually returned every live release of the production track labelled by its current status, so a staged rollout showed up as `rolloutStarted` even when the node was set to emit only on rollout completion. Manual runs now preview the track through the same selection as a real first poll, honouring **Emit When**. Polling behaviour is unchanged, and manual runs still neither read nor write the polling state.

@@ -10,6 +10,7 @@ import type {
 import { NodeOperationError } from 'n8n-workflow';
 
 import { toSanitizedApiError, type RequestContext } from '../shared/errors';
+import { withTransientRetry } from '../shared/retry';
 import type { Track } from './releases';
 import { extractGoogleErrorMessage, isValidPackageName, type GoogleReview } from './reviews';
 
@@ -66,11 +67,18 @@ export function assertVersionCode(this: RequestContext, value: number, itemIndex
 	return value;
 }
 
+const IDEMPOTENT_METHODS: IHttpRequestMethods[] = ['GET', 'HEAD', 'PUT', 'DELETE'];
+
 export async function googlePlayApiRequest(
 	this: RequestContext,
 	method: IHttpRequestMethods,
 	endpoint: string,
-	{ body, qs, itemIndex }: { body?: IDataObject; qs?: IDataObject; itemIndex?: number } = {},
+	{
+		body,
+		qs,
+		itemIndex,
+		retry = IDEMPOTENT_METHODS.includes(method),
+	}: { body?: IDataObject; qs?: IDataObject; itemIndex?: number; retry?: boolean } = {},
 ): Promise<IDataObject> {
 	const options: IHttpRequestOptions = {
 		method,
@@ -81,16 +89,14 @@ export async function googlePlayApiRequest(
 		...(qs !== undefined ? { qs } : {}),
 	};
 
-	try {
-		const response = await this.helpers.httpRequestWithAuthentication.call(
-			this,
-			'googlePlayApi',
-			options,
-		);
-		return (response ?? {}) as IDataObject;
-	} catch (error) {
-		throw toSanitizedApiError(this, error, extractGoogleErrorMessage, 'Google Play', itemIndex);
-	}
+	const response = await withTransientRetry(
+		async () =>
+			await this.helpers.httpRequestWithAuthentication.call(this, 'googlePlayApi', options),
+		(error) =>
+			toSanitizedApiError(this, error, extractGoogleErrorMessage, 'Google Play', itemIndex),
+		retry ? {} : { delaysMs: [] },
+	);
+	return (response ?? {}) as IDataObject;
 }
 
 /** Fetches a raw (non-JSON) API response, e.g. an APK download. */
@@ -108,16 +114,13 @@ export async function googlePlayApiRequestBinary(
 		...(qs !== undefined ? { qs } : {}),
 	};
 
-	try {
-		const response = await this.helpers.httpRequestWithAuthentication.call(
-			this,
-			'googlePlayApi',
-			options,
-		);
-		return Buffer.isBuffer(response) ? response : Buffer.from(response as ArrayBuffer);
-	} catch (error) {
-		throw toSanitizedApiError(this, error, extractGoogleErrorMessage, 'Google Play', itemIndex);
-	}
+	const response = await withTransientRetry(
+		async () =>
+			await this.helpers.httpRequestWithAuthentication.call(this, 'googlePlayApi', options),
+		(error) =>
+			toSanitizedApiError(this, error, extractGoogleErrorMessage, 'Google Play', itemIndex),
+	);
+	return Buffer.isBuffer(response) ? response : Buffer.from(response as ArrayBuffer);
 }
 
 /**
@@ -134,7 +137,8 @@ export async function googlePlayGetProductionTrack(
 		this,
 		'POST',
 		`/applications/${encodeURIComponent(packageName)}/edits`,
-		{ body: {}, itemIndex },
+		// Safe to repeat: the edit is never committed and abandoned ones expire
+		{ body: {}, itemIndex, retry: true },
 	);
 	const editId = edit.id;
 	if (typeof editId !== 'string' || editId === '') {
@@ -156,7 +160,7 @@ export async function googlePlayGetProductionTrack(
 				this,
 				'DELETE',
 				`/applications/${encodeURIComponent(packageName)}/edits/${encodeURIComponent(editId)}`,
-				{ itemIndex },
+				{ itemIndex, retry: false },
 			);
 		} catch {
 			// Abandoned edits expire on their own; failing to delete one is harmless.

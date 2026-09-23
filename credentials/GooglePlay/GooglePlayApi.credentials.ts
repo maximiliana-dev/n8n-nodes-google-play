@@ -1,9 +1,9 @@
 import type {
-	IAuthenticateGeneric,
 	ICredentialDataDecryptedObject,
 	ICredentialTestRequest,
 	ICredentialType,
 	IHttpRequestHelper,
+	IHttpRequestOptions,
 	Icon,
 	INodeProperties,
 } from 'n8n-workflow';
@@ -62,14 +62,21 @@ export class GooglePlayApi implements ICredentialType {
 		return { accessToken };
 	}
 
-	authenticate: IAuthenticateGeneric = {
-		type: 'generic',
-		properties: {
+	// A function instead of a generic `={{...}}` header: expression evaluation
+	// under N8N_EXPRESSION_ENGINE=vm races between concurrent pollers of the
+	// same workflow ("No bridge acquired for this context").
+	async authenticate(
+		credentials: ICredentialDataDecryptedObject,
+		requestOptions: IHttpRequestOptions,
+	): Promise<IHttpRequestOptions> {
+		return {
+			...requestOptions,
 			headers: {
-				Authorization: '=Bearer {{$credentials.accessToken}}',
+				...requestOptions.headers,
+				Authorization: `Bearer ${String(credentials.accessToken)}`,
 			},
-		},
-	};
+		};
+	}
 
 	test: ICredentialTestRequest = {
 		request: {

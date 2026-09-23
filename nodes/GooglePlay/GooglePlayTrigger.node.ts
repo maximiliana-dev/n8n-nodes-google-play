@@ -15,6 +15,11 @@ import {
 	type MultiAppPollState,
 } from '../shared/reviewPolling';
 import {
+	resetPollFailures,
+	shouldSurfacePollFailure,
+	type TransientFailureState,
+} from '../shared/retry';
+import {
 	assertPackageName,
 	fetchAppNames,
 	getApps,
@@ -244,8 +249,8 @@ async function pollReviews(
 
 	const manual = this.getMode() === 'manual';
 	const multiState = manual
-		? ({} as MultiAppPollState)
-		: (this.getWorkflowStaticData('node') as MultiAppPollState);
+		? ({} as MultiAppPollState & TransientFailureState)
+		: (this.getWorkflowStaticData('node') as MultiAppPollState & TransientFailureState);
 	const appStates = getAppStates(multiState, packageNames);
 	const names = await resolveAppNames(this, multiState, packageNames);
 
@@ -323,8 +328,17 @@ async function pollReviews(
 	}
 
 	if (failureCount === packageNames.length && failureCount > 0) {
-		throw firstFailure;
+		if (manual || shouldSurfacePollFailure(multiState, firstFailure)) {
+			throw firstFailure;
+		}
+		this.logger.warn(
+			`Google Play Trigger: polling reviews failed for every app with a transient error (${
+				multiState.consecutiveTransientFailures
+			} in a row); retrying on the next poll`,
+		);
+		return null;
 	}
+	resetPollFailures(multiState);
 
 	return items.length === 0 ? null : [items];
 }
@@ -337,10 +351,11 @@ async function pollReleases(
 
 	const manual = this.getMode() === 'manual';
 	const multiState = manual
-		? ({} as ReleaseTriggerState & { names?: Record<string, string> })
-		: (this.getWorkflowStaticData('node') as ReleaseTriggerState & {
-				names?: Record<string, string>;
-			});
+		? ({} as ReleaseTriggerState & TransientFailureState & { names?: Record<string, string> })
+		: (this.getWorkflowStaticData('node') as ReleaseTriggerState &
+				TransientFailureState & {
+					names?: Record<string, string>;
+				});
 	const appStates = getAppReleaseStates(multiState, packageNames);
 	const names = await resolveAppNames(this, multiState, packageNames);
 
@@ -397,8 +412,17 @@ async function pollReleases(
 	}
 
 	if (failureCount === packageNames.length && failureCount > 0) {
-		throw firstFailure;
+		if (manual || shouldSurfacePollFailure(multiState, firstFailure)) {
+			throw firstFailure;
+		}
+		this.logger.warn(
+			`Google Play Trigger: polling releases failed for every app with a transient error (${
+				multiState.consecutiveTransientFailures
+			} in a row); retrying on the next poll`,
+		);
+		return null;
 	}
+	resetPollFailures(multiState);
 
 	return items.length === 0 ? null : [items];
 }
